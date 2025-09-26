@@ -480,6 +480,38 @@ server <- function(input, output, session) {
     }
   })
   
+  # ---- Hypotheses & Assumptions text ----
+  output$hypothesis <- renderPrint({
+    a <- input$alpha %||% 0.05
+    if (input$test_type == "Two-sample t-test") {
+      cat("H0: The population means are equal across the two groups.\n",
+          "H1: The population means differ.\n",
+          sprintf("Significance level: α = %.3f", a), sep = "")
+    } else if (input$test_type == "Chi-square: Goodness of Fit") {
+      cat("H0: Observed category proportions match expected (uniform) proportions.\n",
+          "H1: Observed category proportions differ from expected.\n",
+          sprintf("Significance level: α = %.3f", a), sep = "")
+    } else {
+      cat("H0: The two categorical variables are independent.\n",
+          "H1: The two categorical variables are associated.\n",
+          sprintf("Significance level: α = %.3f", a), sep = "")
+    }
+  })
+  
+  output$assumptions <- renderPrint({
+    if (input$test_type == "Two-sample t-test") {
+      cat("- Independence within and between groups",
+          "\n- Approximately normal distribution of the numeric variable within each group (or large n)",
+          "\n- Homogeneity of variances (Welch t-test is robust if not)")
+    } else if (input$test_type == "Chi-square: Goodness of Fit") {
+      cat("- Observations are independent\n",
+          "\n- Expected counts per category ideally ≥ 5 (using uniform expectation)")
+    } else {
+      cat("- Observations are independent\n",
+          "\n- Expected counts in contingency table cells ideally ≥ 5")
+    }
+  })
+  
   
   # ---- Test result ----
   output$test_result <- renderPrint({
@@ -681,8 +713,7 @@ server <- function(input, output, session) {
                      width = .15, color = "#222222")
       if (show_pts) g <- g + geom_jitter(position = jpos, alpha = .35, size = 1, color = "#666666")
     }
-    
-    # 统一的主题与标签
+  
     xlab <- if (style == "density") xvar else gvar
     ylab <- if (style == "density") "Density" else xvar
     
@@ -720,6 +751,83 @@ server <- function(input, output, session) {
     }
   })
   
+  # ---------- Independence：Stacking plot ----------
+  output$chi_stack_plot <- renderPlot({
+    req(input$test_type == "Chi-square: Independence")
+    x <- chi_indep_data(); a <- x$a; b <- x$b; dd <- x$dd
+    levs_b <- levels(factor(dd[[b]]))
+    ggplot(dd, aes(x = .data[[a]], fill = .data[[b]])) +
+      geom_bar(position = "fill", color = pal$slate_gray) +
+      scale_fill_manual(values = pastel_for(levs_b), name = b) +
+      scale_y_continuous(labels = scales::percent) +
+      gg_theme + labs(x = a, y = "Proportion", title = paste("Stacked proportions:", a, "by", b)) +
+      theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  })
+  
+  # ---------- Independence：Residual heatmap ----------
+  output$chi_resid_plot <- renderPlot({
+    req(input$test_type == "Chi-square: Independence")
+    x <- chi_indep_data(); a <- x$a; b <- x$b
+    dfh <- as.data.frame(as.table(x$stdres))
+    names(dfh) <- c(a, b, "StdResidual")
+    ggplot(dfh, aes(x = .data[[b]], y = .data[[a]], fill = StdResidual)) +
+      geom_tile(color = "white") +
+      scale_fill_gradient2(low = pal$powder_blue, mid = "white", high = "indianred2") +
+      gg_theme + labs(title = "Standardized residuals heatmap", x = b, y = a)
+  })
+  
+  # ---------- Independence：Contingency table ----------
+  output$chi_indep_table <- render_gt({
+    req(input$test_type == "Chi-square: Independence")
+    x <- chi_indep_data(); a <- x$a; b <- x$b
+    df <- as.data.frame(x$tab) |>
+      dplyr::rename(!!a := Var1, !!b := Var2, Observed = Freq) |>
+      dplyr::mutate(Expected = as.vector(x$exp),
+                    StdResidual = as.vector(x$stdres))
+    gt::gt(df) |>
+      gt::fmt_number(columns = c(Expected, StdResidual), decimals = 2) |>
+      gt::tab_header(title = "Contingency table with expected & std. residuals")
+  })
+  
+  # ---------- GOF：Observed vs Expected ----------
+  output$gof_bar_plot <- renderPlot({
+    req(input$test_type == "Chi-square: Goodness of Fit")
+    gd <- gof_data()
+    df <- tibble::tibble(level = factor(gd$levels, levels = gd$levels),
+                         Observed = gd$obs, Expected = gd$exp_cnt)
+    ggplot(df, aes(x = level)) +
+      geom_col(aes(y = Observed), fill = pal$powder_blue, color = pal$slate_gray, width = .6) +
+      geom_point(aes(y = Expected), size = 3, color = pal$misty_rose) +
+      gg_theme + labs(x = gd$var, y = "Count", title = "GOF: observed vs expected (uniform)")
+  })
+  
+  # ---------- GOF：redis plot ----------
+  output$gof_resid_plot <- renderPlot({
+    req(input$test_type == "Chi-square: Goodness of Fit")
+    gd <- gof_data()
+    df <- tibble::tibble(level = factor(gd$levels, levels = gd$levels),
+                         StdResidual = gd$stdres)
+    ggplot(df, aes(x = level, y = StdResidual, fill = level)) +
+      geom_col(width = .6, color = pal$slate_gray) +
+      scale_fill_manual(values = pastel_for(gd$levels), guide = "none") +
+      geom_hline(yintercept = 0, linetype = 2, color = pal$slate_gray) +
+      gg_theme + labs(x = gd$var, y = "Std. residual", title = "GOF: standardized residuals by category")
+  })
+  
+  # ---------- GOF：plot（Observed / Expected / StdResidual） ----------
+  output$gof_table <- render_gt({
+    req(input$test_type == "Chi-square: Goodness of Fit")
+    gd <- gof_data()
+    df <- tibble::tibble(
+      level = factor(gd$levels, levels = gd$levels),
+      Observed = gd$obs,
+      Expected = gd$exp_cnt,
+      StdResidual = gd$stdres
+    )
+    gt::gt(df) |>
+      gt::fmt_number(columns = c(Expected, StdResidual), decimals = 2) |>
+      gt::tab_header(title = paste0("Goodness-of-fit for ", gd$var))
+  })
   
   
 }
