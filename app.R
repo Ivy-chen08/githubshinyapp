@@ -65,6 +65,23 @@ pastel_for <- function(levels_chr) {
   stats::setNames(cols, levels_chr)
 }
 
+# ---------------- Column short names ----------------
+new_names <- c(
+  "timestamp","target_grade","assignment_preference","trimester_or_semester",
+  "age","tendency_yes_or_no","pay_rent","stall_choice","weetbix_count",
+  "weekly_food_spend","living_arrangements","weekly_alcohol","believe_in_aliens",
+  "height","commute","daily_anxiety_frequency","weekly_study_hours","work_status",
+  "social_media","gender","average_daily_sleep","usual_bedtime","sleep_schedule",
+  "sibling_count","allergy_count","diet_style","random_number","favourite_number",
+  "favourite_letter","drivers_license","relationship_status","daily_short_video_time",
+  "computer_os","steak_preference","dominant_hand","enrolled_unit",
+  "weekly_exercise_hours","weekly_paid_work_hours","assignments_on_time","used_r_before",
+  "team_role_type","university_year","favourite_anime","fluent_languages",
+  "readable_languages","country_of_birth","wam","shoe_size","books_read_highschool",
+  "daily_water_intake_l","perceived_old_age","study_music_preference"
+)
+
+
 # ---------------- Helpers ----------------
 is_numish <- function(v) {
   if (is.numeric(v)) return(TRUE)
@@ -80,6 +97,44 @@ miss_top_tbl <- function(df, k = 10) {
   ) |>
     arrange(desc(pct_miss), desc(n_miss)) |>
     slice_head(n = k)
+}
+
+# Robust bedtime parser
+parse_bedtime <- function(x) {
+  s <- str_squish(as.character(x))
+  n <- length(s)
+  secs <- rep(NA_real_, n)
+  m <- str_match(s, ".*?(\\b\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\b")
+  ok <- !is.na(m[,1])
+  if (any(ok)) {
+    hh <- suppressWarnings(as.numeric(m[ok,2]))
+    mm <- suppressWarnings(as.numeric(m[ok,3]))
+    ss <- suppressWarnings(as.numeric(ifelse(is.na(m[ok,4]), "0", m[ok,4])))
+    secs[ok] <- hh*3600 + mm*60 + ss
+  }
+  m2 <- str_match(tolower(s), "(\\b\\d{1,2}):(\\d{2})\\s*(am|pm)\\b")
+  ok2 <- !is.na(m2[,1])
+  if (any(ok2)) {
+    hh <- as.numeric(m2[ok2,2]); mm <- as.numeric(m2[ok2,3]); ap <- m2[ok2,4]
+    hh <- ifelse(ap=="pm" & hh<12, hh+12, ifelse(ap=="am" & hh==12, 0, hh))
+    secs[ok2] <- hh*3600 + mm*60
+  }
+  out <- rep(as_hms(NA_real_), n)
+  out[!is.na(secs)] <- hms::as_hms(secs[!is.na(secs)])
+  out
+}
+
+fix_noon_shift <- function(hms_vec) {
+  is_pm <- !is.na(hms_vec) &
+    (hms_vec > hms::as_hms("06:00:00")) &
+    (hms_vec < hms::as_hms("14:00:00"))
+  res <- hms_vec
+  res[is_pm] <- hms::as_hms((as.numeric(res[is_pm]) + 12*3600) %% (24*3600))
+  res
+}
+
+palette_for_levels <- function(n) {
+  colorRampPalette(c(pal$powder_blue, pal$light_blue, pal$misty_rose, pal$slate_gray))(max(n,2))
 }
 
 # ---------------- UI ----------------
