@@ -110,15 +110,129 @@ palette_for_levels <- function(n) {
 }
 
 
-
+# ---------------- UI ----------------
 ui <- navbarPage(
   theme = theme_app,
   title = "DATA2x02 Survey Explorer",
-  tabPanel("Home", h2("Welcome"), p("Placeholder")),
-  tabPanel("Data Visualization", h2("Coming soon")),
-  tabPanel("Statistical Tests", h2("Coming soon"))
+  # --- Home ---
+  tabPanel(
+    "Home",
+    fluidPage(
+      h2("Welcome to DATA2x02 Survey Explorer"),
+      p("Explore the cleaned survey data, visualize distributions and missingness, and run interactive hypothesis tests."),
+      tags$ul(
+        tags$li(strong("Data Visualization:"), " Missingness (table + matrix), One-variable distribution, Bedtime demo"),
+        tags$li(strong("Statistical Tests:"), " Two-sample t-test, Chi-square (Goodness of Fit / Independence) with auto H0/H1 & assumptions")
+      ),
+      p("Tip: Upload your dataset (.xlsx/.csv) or use the bundled 'cleaned_survey.xlsx' in the working directory.")
+    )
+  ),
+  
+  # --- Data Visualization ---
+  tabPanel(
+    "Data Visualization",
+    sidebarLayout(
+      sidebarPanel(
+        fileInput("file", "Upload .xlsx / .csv", accept = c(".xlsx",".csv")),
+        checkboxInput("use_demo", "Use bundled cleaned_survey.xlsx", value = TRUE),
+        hr(),
+        uiOutput("one_var_picker")
+      ),
+      mainPanel(
+        fluidRow(
+          column(6, h4("Missingness (Top 10)"), gt_output("miss_tbl")),
+          column(6, h4("Missingness Matrix"), plotOutput("miss_plot", height = "300px"))
+        ),
+        hr(),
+        fluidRow(
+          column(
+            width = 6,
+            h4("One-variable Distribution"),
+            plotOutput("one_var_plot", height = "300px")
+          ),
+          column(
+            width = 6,
+            h4("Bedtime (clean demo)"),
+            plotOutput("bedtime_plot", height = "300px")
+          )
+        )
+      )
+    )
+  ),
+  
+  
 )
 
-server <- function(input, output, session) {}
+server <- function(input, output, session) {
+  # ---- Data for Visualization tab ----
+  raw_df_viz <- reactive({
+    if (!is.null(input$file)) {
+      ext <- tolower(tools::file_ext(input$file$name))
+      if (ext == "xlsx") read_excel(input$file$datapath)
+      else if (ext == "csv") readr::read_csv(input$file$datapath, show_col_types = FALSE)
+      else validate(need(FALSE, "Please upload .xlsx or .csv"))
+    } else if (isTRUE(input$use_demo)) {
+      if (file.exists("cleaned_survey.xlsx")) read_excel("cleaned_survey.xlsx")
+      else validate(need(FALSE, "Demo .xlsx not found in working directory."))
+    } else {
+      validate(need(FALSE, "Please upload a dataset."))
+    }
+  })
+  
+  df_viz <- reactive({
+    d <- raw_df_viz() |> janitor::clean_names()
+    d <- d[, seq_len(min(ncol(d), length(new_names)))]
+    names(d) <- new_names[seq_len(ncol(d))]
+    d
+  })
+  
+  output$one_var_picker <- renderUI({
+    selectInput("onevar", "Pick a variable:", choices = names(df_viz()), selected = "wam")
+  })
+  
+  output$miss_tbl <- render_gt({
+    miss_top_tbl(df_viz(), 10) |>
+      gt() |>
+      fmt_number(columns = "pct_miss", decimals = 2) |>
+      tab_style(style = cell_fill(color = pal$misty_rose),
+                locations = cells_body(columns = "pct_miss")) |>
+      cols_label(var = "variable", n_miss = "n_miss", pct_miss = "pct_miss")
+  })
+  
+  output$miss_plot <- renderPlot({
+    visdat::vis_miss(df_viz()) + gg_theme +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  })
+  
+  output$one_var_plot <- renderPlot({
+    d <- df_viz(); v <- input$onevar; req(v)
+    x <- d[[v]]
+    g <- ggplot()
+    if (is_numish(x)) {
+      xx <- suppressWarnings(as.numeric(x))
+      g + geom_histogram(aes(x = xx), bins = 30,
+                         fill = pal$powder_blue, color = pal$slate_gray) +
+        gg_theme + labs(x = v, y = "Count", title = paste("Distribution of", v))
+    } else {
+      tab <- d |> count(!!sym(v), name = "n")
+      g + geom_col(aes(x = reorder(!!sym(v), n), y = n), data = tab,
+                   fill = pal$light_blue, color = pal$slate_gray) +
+        coord_flip() + gg_theme + labs(x = v, y = "Count", title = paste("Distribution of", v))
+    }
+  })
+  
+  output$bedtime_plot <- renderPlot({
+    d <- df_viz()
+    req("usual_bedtime" %in% names(d))
+    bt <- parse_bedtime(d$usual_bedtime) |> fix_noon_shift()
+    validate(need(sum(!is.na(bt)) > 0, "No parseable times found"))
+    tibble(bt = bt) |>
+      ggplot(aes(x = bt)) +
+      geom_histogram(binwidth = 3600, fill = pal$powder_blue, color = pal$slate_gray,
+                     boundary = 0, closed = "right") +
+      coord_polar() + gg_theme +
+      labs(x = NULL, y = NULL, title = "Usual Bedtime (clean demo)")
+  })
+}
 
 shinyApp(ui, server)
