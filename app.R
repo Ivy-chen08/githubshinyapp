@@ -509,10 +509,10 @@ server <- function(input, output, session){
           "\n- Homogeneity of variances (Welch t-test is robust if not)")
     } else if (input$test_type == "Chi-square: Goodness of Fit") {
       cat("- Observations are independent\n",
-          "- Expected counts per category ideally ≥ 5 (using uniform expectation)")
+          "\n- Expected counts per category ideally ≥ 5 (using uniform expectation)")
     } else {
       cat("- Observations are independent\n",
-          "- Expected counts in contingency table cells ideally ≥ 5")
+          "\n- Expected counts in contingency table cells ideally ≥ 5")
     }
   })
   
