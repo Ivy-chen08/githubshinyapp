@@ -14,6 +14,7 @@ library(visdat)
 library(hms)
 library(rlang)
 
+# ---------------- Theme / Palette ----------------
 pal <- list(
   misty_rose = "#FFE4E1",
   powder_blue = "#B0E0E6",
@@ -26,9 +27,12 @@ pal <- list(
 thematic::thematic_on(fg = pal$ink, bg = pal$bg, accent = pal$slate_gray)
 
 theme_app <- bs_theme(
-  version = 5, bootswatch = "flatly",
-  "body-bg" = pal$bg, "body-color" = pal$ink,
-  "link-color" = pal$ink, "primary" = pal$powder_blue
+  version = 5,
+  bootswatch = "flatly",
+  "body-bg" = pal$bg,
+  "body-color" = pal$ink,
+  "link-color" = pal$ink,
+  "primary" = pal$powder_blue
 )
 
 gg_theme <- theme_minimal(base_family = "Inter") +
@@ -40,28 +44,35 @@ gg_theme <- theme_minimal(base_family = "Inter") +
     panel.grid.minor = element_blank()
   )
 
-new_names <- c(
-  "timestamp","target_grade","assignment_preference","trimester_or_semester",
-  "age","tendency_yes_or_no","pay_rent","stall_choice","weetbix_count",
-  "weekly_food_spend","living_arrangements","weekly_alcohol","believe_in_aliens",
-  "height","commute","daily_anxiety_frequency","weekly_study_hours","work_status",
-  "social_media","gender","average_daily_sleep","usual_bedtime","sleep_schedule",
-  "sibling_count","allergy_count","diet_style","random_number","favourite_number",
-  "favourite_letter","drivers_license","relationship_status","daily_short_video_time",
-  "computer_os","steak_preference","dominant_hand","enrolled_unit",
-  "weekly_exercise_hours","weekly_paid_work_hours","assignments_on_time","used_r_before",
-  "team_role_type","university_year","favourite_anime","fluent_languages",
-  "readable_languages","country_of_birth","wam","shoe_size","books_read_highschool",
-  "daily_water_intake_l","perceived_old_age","study_music_preference"
+pastel_base <- c(
+  pal$misty_rose,
+  pal$powder_blue,
+  pal$light_blue,
+  pal$slate_gray,
+  "thistle2",
+  "palevioletred2",
+  "slategray2",
+  "lightsteelblue1"
 )
 
+palette_for_levels <- function(n) {
+  colorRampPalette(pastel_base)(max(n, length(pastel_base)))
+}
+
+pastel_for <- function(levels_chr) {
+  n <- length(levels_chr)
+  cols <- palette_for_levels(n)[seq_len(n)]
+  stats::setNames(cols, levels_chr)
+}
+
+# ---------------- Helpers ----------------
 is_numish <- function(v) {
   if (is.numeric(v)) return(TRUE)
   if (!is.character(v)) return(FALSE)
   suppressWarnings(mean(!is.na(as.numeric(v))) >= 0.6)
 }
 
-miss_top_tbl <- function(df, k = 10){
+miss_top_tbl <- function(df, k = 10) {
   tibble::tibble(
     var = names(df),
     n_miss = vapply(df, function(v) sum(is.na(v)), integer(1)),
@@ -71,49 +82,11 @@ miss_top_tbl <- function(df, k = 10){
     slice_head(n = k)
 }
 
-
-parse_bedtime <- function(x) {
-  s <- str_squish(as.character(x))
-  n <- length(s)
-  secs <- rep(NA_real_, n)
-  m <- str_match(s, ".*?(\\b\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\b")
-  ok <- !is.na(m[,1])
-  if (any(ok)) {
-    hh <- suppressWarnings(as.numeric(m[ok,2]))
-    mm <- suppressWarnings(as.numeric(m[ok,3]))
-    ss <- suppressWarnings(as.numeric(ifelse(is.na(m[ok,4]), "0", m[ok,4])))
-    secs[ok] <- hh*3600 + mm*60 + ss
-  }
-  m2 <- str_match(tolower(s), "(\\b\\d{1,2}):(\\d{2})\\s*(am|pm)\\b")
-  ok2 <- !is.na(m2[,1])
-  if (any(ok2)) {
-    hh <- as.numeric(m2[ok2,2]); mm <- as.numeric(m2[ok2,3]); ap <- m2[ok2,4]
-    hh <- ifelse(ap=="pm" & hh<12, hh+12, ifelse(ap=="am" & hh==12, 0, hh))
-    secs[ok2] <- hh*3600 + mm*60
-  }
-  out <- rep(as_hms(NA_real_), n)
-  out[!is.na(secs)] <- hms::as_hms(secs[!is.na(secs)])
-  out
-}
-
-fix_noon_shift <- function(hms_vec) {
-  is_pm <- !is.na(hms_vec) &
-    (hms_vec > hms::as_hms("06:00:00")) &
-    (hms_vec < hms::as_hms("14:00:00"))
-  res <- hms_vec
-  res[is_pm] <- hms::as_hms((as.numeric(res[is_pm]) + 12*3600) %% (24*3600))
-  res
-}
-
-palette_for_levels <- function(n) {
-  colorRampPalette(c(pal$powder_blue, pal$light_blue, pal$misty_rose, pal$slate_gray))(max(n,2))
-}
-
-
 # ---------------- UI ----------------
 ui <- navbarPage(
   theme = theme_app,
   title = "DATA2x02 Survey Explorer",
+  
   # --- Home ---
   tabPanel(
     "Home",
@@ -159,6 +132,7 @@ ui <- navbarPage(
       )
     )
   ),
+  
   # --- Statistical Tests ---
   tabPanel(
     "Statistical Tests",
@@ -180,7 +154,7 @@ ui <- navbarPage(
         uiOutput("ui_ref_group"),
         uiOutput("ui_alt_hypothesis"),
         
-        # ---- Plot style for tests (only for t-test) ----
+        # t-test plot style
         conditionalPanel(
           condition = "input.test_type == 'Two-sample t-test'",
           selectInput(
@@ -194,7 +168,6 @@ ui <- navbarPage(
           checkboxInput("tt_show_points", "Show raw points (where applicable)", value = FALSE)
         ),
         
-        
         hr(),
         uiOutput("assumption_hint")
       ),
@@ -205,11 +178,40 @@ ui <- navbarPage(
         verbatimTextOutput("assumptions"),
         h4("Test Result"),
         verbatimTextOutput("test_result"),
-        h4("Visualisation")
+        h4("Visualisation"),
+        
+        # t-test
+        conditionalPanel(
+          condition = "input.test_type == 'Two-sample t-test'",
+          plotOutput("test_plot", height = "360px")
+        ),
+        
+        # Chi-square: Independence
+        conditionalPanel(
+          condition = "input.test_type == 'Chi-square: Independence'",
+          fluidRow(
+            column(6, plotOutput("chi_stack_plot", height = "320px")),
+            column(6, plotOutput("chi_resid_plot", height = "320px"))
+          ),
+          br(),
+          gt_output("chi_indep_table")
+        ),
+        
+        # Chi-square: GOF
+        conditionalPanel(
+          condition = "input.test_type == 'Chi-square: Goodness of Fit'",
+          fluidRow(
+            column(6, plotOutput("gof_bar_plot", height = "320px")),
+            column(6, plotOutput("gof_resid_plot", height = "320px"))
+          ),
+          br(),
+          gt_output("gof_table")
+        )
       )
     )
   )
-)
+) 
+
 
 server <- function(input, output, session) {
   # ---- Data for Visualization tab ----
@@ -375,6 +377,146 @@ server <- function(input, output, session) {
       HTML("<em>Requirements:</em> one categorical variable compared to a uniform (or supplied) distribution.")
     }
   })
+  
+  
+  # ---- Test result ----
+  output$test_result <- renderPrint({
+    req(input$test_type)
+    
+    if (input$test_type == "Two-sample t-test") {
+      req(input$num_var, input$group_var)
+      d    <- df_tests()
+      xvar <- input$num_var
+      gvar <- input$group_var
+      
+      xv <- suppressWarnings(as.numeric(d[[xvar]]))
+      gv <- factor(d[[gvar]])
+      
+      levs <- levels(gv)
+      validate(need(length(levs) >= 2, "Grouping variable needs at least 2 levels."))
+      
+      if (!is.null(input$level_a) && !is.null(input$level_b)) {
+        keep <- gv %in% c(input$level_a, input$level_b)
+        xv   <- xv[keep]
+        gv   <- droplevels(factor(gv[keep], levels = c(input$level_a, input$level_b)))
+        lvlA <- input$level_a; lvlB <- input$level_b
+      } else {
+        keep <- gv %in% levs[1:2]
+        xv   <- xv[keep]
+        gv   <- droplevels(factor(gv[keep], levels = levs[1:2]))
+        lvlA <- levels(gv)[1]; lvlB <- levels(gv)[2]
+      }
+      
+      ok <- !is.na(xv) & !is.na(gv)
+      xv <- xv[ok]; gv <- droplevels(gv[ok])
+      
+      validate(need(length(unique(gv)) == 2, "Still need two non-empty groups after NA removal."))
+      validate(need(sum(gv == lvlA) >= 2 && sum(gv == lvlB) >= 2, "Each group needs at least 2 observations."))
+      
+      y1 <- xv[gv == lvlA]; y2 <- xv[gv == lvlB]
+      alt   <- if (is.null(input$alt)) "two.sided" else input$alt
+      alpha <- if (is.null(input$alpha)) 0.05 else input$alpha
+      
+      # --- Group summaries (n, mean, sd) ---
+      n1 <- length(y1); n2 <- length(y2)
+      m1 <- mean(y1, na.rm = TRUE); m2 <- mean(y2, na.rm = TRUE)
+      s1 <- sd(y1, na.rm = TRUE);   s2 <- sd(y2, na.rm = TRUE)
+      
+      # Optional: Cohen's d (pooled SD), only if both groups have >=2 obs
+      d_eff <- NA_real_
+      if (n1 >= 2 && n2 >= 2) {
+        sp <- sqrt(((n1 - 1) * s1^2 + (n2 - 1) * s2^2) / (n1 + n2 - 2))
+        if (sp > 0) d_eff <- (m1 - m2) / sp
+      }
+      
+      v.equal <- FALSE
+      reason  <- "Default to Welch t-test (variance/size may differ)."
+      vt <- tryCatch(var.test(y1, y2), error = function(e) NULL)
+      if (!is.null(vt)) {
+        if (vt$p.value > alpha) {
+          v.equal <- TRUE
+          reason  <- sprintf("Student t-test (equal variances), var.test p=%.4f > α=%.3f", vt$p.value, alpha)
+        } else {
+          v.equal <- FALSE
+          reason  <- sprintf("Welch t-test (unequal variances), var.test p=%.4f ≤ α=%.3f", vt$p.value, alpha)
+        }
+      }
+      
+      tt <- t.test(y1, y2, alternative = alt, var.equal = v.equal)
+      
+      h0 <- sprintf("H0: mean(%s in %s) = mean(%s in %s)", xvar, lvlA, xvar, lvlB)
+      h1 <- switch(
+        alt,
+        "two.sided" = sprintf("H1: mean(%s in %s) ≠ mean(%s in %s)", xvar, lvlA, xvar, lvlB),
+        "greater"   = sprintf("H1: mean(%s in %s) > mean(%s in %s)", xvar, lvlA, xvar, lvlB),
+        "less"      = sprintf("H1: mean(%s in %s) < mean(%s in %s)", xvar, lvlA, xvar, lvlB)
+      )
+      decision <- ifelse(tt$p.value < alpha, "Reject H0", "Fail to reject H0")
+      
+      cat("Two-sample t-test\n")
+      cat("Numeric:", xvar, " | Group:", gvar, "\n")
+      cat("Groups: A =", lvlA, " | B =", lvlB, "\n")
+      cat("Alternative:", alt, "\n")
+      cat("Choice:", reason, "\n\n")
+      cat(h0, "\n", h1, "\n\n", sep = "")
+      cat(sprintf("Group summaries: %s  n=%d  mean=%.2f  SD=%.2f   |   %s  n=%d  mean=%.2f  SD=%.2f\n",
+                  lvlA, n1, m1, s1, lvlB, n2, m2, s2))
+      if (!is.na(d_eff)) cat(sprintf("Effect size (Cohen's d based on pooled SD): %.3f\n", d_eff))
+      cat(sprintf("t = %.3f, df = %.2f, p-value = %.4f\n", tt$statistic, tt$parameter, tt$p.value))
+      cat(sprintf("alpha = %.3f  ->  Decision: %s\n", alpha, decision))
+      return(invisible(NULL))
+    }
+    
+    if (input$test_type == "Chi-square: Independence") {
+      req(input$cat_var_a, input$cat_var_b)
+      d  <- df_tests()
+      a  <- input$cat_var_a
+      b  <- input$cat_var_b
+      dd <- d |> dplyr::filter(!is.na(.data[[a]]), !is.na(.data[[b]]))
+      tab <- table(dd[[a]], dd[[b]])
+      validate(need(all(dim(tab) >= 2), "Need at least a 2x2 table."))
+      
+      tmp  <- suppressWarnings(chisq.test(tab, simulate.p.value = FALSE, correct = (all(dim(tab) == 2))))
+      expc <- tmp$expected
+      min_exp <- min(expc)
+      
+      if (all(dim(tab) == 2) && min_exp < 5) {
+        res <- fisher.test(tab)
+        cat("Test chosen: Fisher's Exact (2x2 with small expected counts)\n\n")
+        print(res)
+      } else if (min_exp < 5) {
+        res <- suppressWarnings(chisq.test(tab, simulate.p.value = TRUE, B = 2000))
+        cat("Test chosen: Chi-square with Monte Carlo p-value (sparse table)\n")
+        cat(sprintf("Min expected cell = %.2f\n\n", min_exp))
+        print(res)
+      } else {
+        res <- chisq.test(tab, correct = (all(dim(tab) == 2)))
+        cat("Test chosen: Pearson's Chi-square\n\n")
+        print(res)
+      }
+      return(invisible(NULL))
+    }
+    
+    if (input$test_type == "Chi-square: Goodness of Fit") {
+      req(input$cat_var_gof)
+      d <- df_tests()
+      g <- input$cat_var_gof
+      x <- factor(d[[g]])
+      x <- droplevels(x[!is.na(x)])
+      validate(need(nlevels(x) >= 2, "This variable needs at least 2 categories."))
+      
+      obs <- table(x)
+      k   <- length(obs)
+      exp <- rep(1 / k, k)
+      res <- chisq.test(x = obs, p = exp, rescale.p = TRUE, simulate.p.value = (any(obs < 5) && k > 4))
+      
+      cat("Chi-square: Goodness of Fit (expected = uniform)\n\n")
+      print(res)
+      return(invisible(NULL))
+    }
+  })
+  
+  
   
 }
 
