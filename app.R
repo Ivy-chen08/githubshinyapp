@@ -515,6 +515,108 @@ server <- function(input, output, session) {
       return(invisible(NULL))
     }
   })
+  # ---- Test visualisations ----
+  output$test_plot <- renderPlot({
+    req(input$test_type == "Two-sample t-test")
+    req(input$num_var, input$group_var)
+    
+    d    <- df_tests()
+    xvar <- input$num_var
+    gvar <- input$group_var
+    
+    dd <- d %>%
+      dplyr::filter(!is.na(.data[[xvar]]), !is.na(.data[[gvar]]))
+    dd[[xvar]] <- suppressWarnings(as.numeric(dd[[xvar]]))
+    dd <- dplyr::filter(dd, !is.na(.data[[xvar]]))
+    validate(need(nrow(dd) > 1, "Not enough non-missing observations."))
+    
+    if (!is.null(input$level_a) && !is.null(input$level_b)) {
+      dd <- dplyr::filter(dd, .data[[gvar]] %in% c(input$level_a, input$level_b))
+      dd[[gvar]] <- factor(dd[[gvar]], levels = c(input$level_a, input$level_b))
+    } else {
+      levs <- levels(factor(dd[[gvar]]))
+      validate(need(length(levs) >= 2, "The grouping variable needs at least 2 levels."))
+      dd <- dplyr::filter(dd, .data[[gvar]] %in% levs[1:2])
+      dd[[gvar]] <- factor(dd[[gvar]], levels = levs[1:2])
+    }
+    validate(need(nrow(dd) > 1, "No rows after filtering to two groups."))
+    
+    levs2     <- levels(factor(dd[[gvar]]))
+    fill_vals <- pastel_for(levs2)
+    
+    style    <- input$tt_plot_style %||% "violin"
+    show_pts <- isTRUE(input$tt_show_points)
+    
+    #set seed
+    jpos <- ggplot2::position_jitter(width = 0.15, height = 0, seed = 2902)
+    
+    
+    if (style == "density") {
+      g <- ggplot(dd, aes(x = .data[[xvar]], fill = .data[[gvar]])) +
+        geom_density(alpha = .45, color = pal$slate_gray) +
+        scale_fill_manual(values = fill_vals, name = gvar)
+    } else if (style == "violin") {
+      g <- ggplot(dd, aes(x = .data[[gvar]], y = .data[[xvar]], fill = .data[[gvar]])) +
+        geom_violin(alpha = .7, color = pal$slate_gray) +
+        geom_boxplot(width = .18, outlier.shape = NA, fill = "white", color = pal$slate_gray)
+      if (show_pts) g <- g + geom_jitter(position = jpos, alpha = .35, size = 1, color = "dodgerblue4")
+    } else if (style == "box_jitter") {
+      g <- ggplot(dd, aes(x = .data[[gvar]], y = .data[[xvar]], fill = .data[[gvar]])) +
+        geom_boxplot(
+          outlier.shape = NA, width = .35,
+          color = pal$ink,
+          linewidth = 0.5
+        ) +
+        { if (show_pts) geom_jitter(width = .15, alpha = .55, size = 1.2, color = pal$ink) else NULL } +
+        scale_fill_manual(values = fill_vals, guide = "none") +
+        gg_theme +
+        labs(x = gvar, y = xvar, title = paste("Two-sample plot:", xvar, "by", gvar)) +
+        theme(axis.text.x = element_text(angle = 30, hjust = 1))
+    } else if (style == "mean_ci") {
+      g <- ggplot(dd, aes(x = .data[[gvar]], y = .data[[xvar]], fill = .data[[gvar]])) +
+        stat_summary(fun = mean, geom = "point", size = 3, color = "#222222") +
+        stat_summary(fun.data = ggplot2::mean_cl_normal, geom = "errorbar",
+                     width = .15, color = "#222222")
+      if (show_pts) g <- g + geom_jitter(position = jpos, alpha = .35, size = 1, color = "#666666")
+    }
+    
+    # 统一的主题与标签
+    xlab <- if (style == "density") xvar else gvar
+    ylab <- if (style == "density") "Density" else xvar
+    
+    g +
+      scale_fill_manual(values = fill_vals, guide = if (style == "density") "legend" else "none") +
+      gg_theme +
+      labs(x = xlab, y = ylab,
+           title = paste("Two-sample", if (style=="density") "density:" else "plot:", xvar, "by", gvar)) +
+      theme(axis.text.x = element_text(angle = 30, hjust = 1))
+    
+  })
+  output$test_tables <- renderUI({
+    if (input$test_type == "Chi-square: Independence") {
+      req(input$cat_var_a, input$cat_var_b)
+      d  <- df_tests()
+      a  <- input$cat_var_a; b <- input$cat_var_b
+      dd <- d %>% filter(!is.na(.data[[a]]), !is.na(.data[[b]]))
+      tab <- table(dd[[a]], dd[[b]])
+      gt_tbl <- gt::gt(as.data.frame.matrix(tab)) %>%
+        gt::tab_header(title = "Contingency table (counts)")
+      gt::gt_output("indep_gt") 
+    } else if (input$test_type == "Chi-square: Goodness of Fit") {
+      req(input$cat_var_gof)
+      d <- df_tests()
+      g <- input$cat_var_gof
+      x <- factor(d[[g]])
+      x <- droplevels(x[!is.na(x)])
+      obs <- as.integer(table(x))
+      k   <- length(obs)
+      exp <- rep(sum(obs)/k, k)
+      gof_df <- tibble::tibble(level = names(table(x)), observed = obs, expected = exp)
+      gt::gt_output("gof_gt")
+    } else {
+      return(NULL)
+    }
+  })
   
   
   
