@@ -373,6 +373,42 @@ server <- function(input, output, session) {
     d
   })
   
+  # ---------- Chi-square: Independence ----------
+  chi_indep_data <- reactive({
+    req(input$test_type == "Chi-square: Independence")
+    req(input$cat_var_a, input$cat_var_b)
+    d <- df_tests()
+    a <- input$cat_var_a; b <- input$cat_var_b
+    dd <- d %>% dplyr::filter(!is.na(.data[[a]]), !is.na(.data[[b]]))
+    validate(need(nrow(dd) > 0, "No rows after filtering NAs."))
+    
+    tab <- table(dd[[a]], dd[[b]])
+    validate(need(all(dim(tab) >= 2), "Need at least a 2x2 table."))
+    
+    suppressWarnings({ chisq <- chisq.test(tab, simulate.p.value = FALSE, correct = (all(dim(tab) == 2))) })
+    list(a = a, b = b, dd = dd, tab = tab,
+         exp = chisq$expected, stdres = chisq$stdres)
+  })
+  
+  # ---------- Chi-square: GOF ----------
+  gof_data <- reactive({
+    req(input$test_type == "Chi-square: Goodness of Fit", input$cat_var_gof)
+    d <- df_tests()
+    g <- input$cat_var_gof
+    x <- factor(d[[g]])
+    x <- droplevels(x[!is.na(x)])
+    validate(need(nlevels(x) >= 2, "This variable needs at least 2 categories."))
+    
+    obs <- table(x); k <- length(obs)
+    chisq <- chisq.test(x = obs, p = rep(1/k, k), rescale.p = TRUE,
+                        simulate.p.value = (any(obs < 5) && k > 4))
+    list(var = g, levels = names(obs),
+         obs = as.numeric(obs),
+         exp_cnt = as.numeric(chisq$expected),
+         stdres = as.numeric(chisq$stdres))
+  })
+  
+  
   # ---- Dynamic inputs (Tests tab) ----
   output$test_var_inputs <- renderUI({
     req(input$test_type)
