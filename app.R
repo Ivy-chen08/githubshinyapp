@@ -222,11 +222,6 @@ ui <- navbarPage(
           checkboxInput("tt_show_points", "Show raw points (where applicable)", value = FALSE)
         ),
         
-        # ---- Extra option for chi-square independence ----
-        conditionalPanel(
-          condition = "input.test_type == 'Chi-square: Independence'",
-          checkboxInput("show_resid_heatmap", "Show standardized residual heatmap", value = FALSE)
-        ),
         
         hr(),
         uiOutput("assumption_hint")
