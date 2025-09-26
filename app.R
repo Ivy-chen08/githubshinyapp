@@ -739,7 +739,7 @@ server <- function(input, output, session){
       tab <- table(dd[[a]], dd[[b]])
       gt_tbl <- gt::gt(as.data.frame.matrix(tab)) %>%
         gt::tab_header(title = "Contingency table (counts)")
-      gt::gt_output("indep_gt")   # ui 占位
+      gt::gt_output("indep_gt") 
     } else if (input$test_type == "Chi-square: Goodness of Fit") {
       req(input$cat_var_gof)
       d <- df_tests()
