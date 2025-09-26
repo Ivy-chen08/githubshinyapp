@@ -137,6 +137,17 @@ palette_for_levels <- function(n) {
   colorRampPalette(c(pal$powder_blue, pal$light_blue, pal$misty_rose, pal$slate_gray))(max(n,2))
 }
 
+pastel_cols <- c(
+  pal$misty_rose, pal$powder_blue, pal$light_blue, pal$slate_gray,
+  "thistle2","palevioletred2","slategray2","lightsteelblue1"
+)
+pastel_for <- function(levels_chr) {
+  n <- length(levels_chr)
+  cols <- rep(pastel_cols, length.out = n)
+  stats::setNames(cols, levels_chr)
+}
+
+
 # ---------------- UI ----------------
 ui <- navbarPage(
   theme = theme_app,
