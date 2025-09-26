@@ -281,6 +281,101 @@ server <- function(input, output, session) {
       coord_polar() + gg_theme +
       labs(x = NULL, y = NULL, title = "Usual Bedtime (clean demo)")
   })
+  
+  
+  # ---- Data for Tests tab ----
+  raw_df_tests <- reactive({
+    if (!is.null(input$file_tests)) {
+      ext <- tolower(tools::file_ext(input$file_tests$name))
+      if (ext == "xlsx") read_excel(input$file_tests$datapath)
+      else if (ext == "csv") readr::read_csv(input$file_tests$datapath, show_col_types = FALSE)
+      else validate(need(FALSE, "Please upload .xlsx or .csv"))
+    } else if (isTRUE(input$use_demo_tests)) {
+      if (file.exists("cleaned_survey.xlsx")) read_excel("cleaned_survey.xlsx")
+      else validate(need(FALSE, "Demo .xlsx not found in working directory."))
+    } else {
+      validate(need(FALSE, "Please upload a dataset."))
+    }
+  })
+  
+  df_tests <- reactive({
+    d <- raw_df_tests() |> janitor::clean_names()
+    d <- d[, seq_len(min(ncol(d), length(new_names)))]
+    names(d) <- new_names[seq_len(ncol(d))]
+    d
+  })
+  
+  # ---- Dynamic inputs (Tests tab) ----
+  output$test_var_inputs <- renderUI({
+    req(input$test_type)
+    d <- df_tests()
+    num_vars <- names(d)[vapply(d, is_numish, logical(1))]
+    cat_vars <- setdiff(names(d), num_vars)
+    
+    if (input$test_type == "Two-sample t-test") {
+      tagList(
+        selectInput("num_var",  "Numeric variable", choices = num_vars, selected = "wam"),
+        selectInput("group_var","Grouping (categorical)", choices = cat_vars, selected = "gender"),
+        uiOutput("ui_pick_two_levels")
+      )
+    } else if (input$test_type == "Chi-square: Independence") {
+      tagList(
+        selectInput("cat_var_a","Categorical A", choices = cat_vars, selected = "gender"),
+        selectInput("cat_var_b","Categorical B", choices = cat_vars, selected = "assignment_preference")
+      )
+    } else { # GOF
+      tagList(
+        selectInput("cat_var_gof","Categorical variable", choices = cat_vars, selected = "assignment_preference")
+      )
+    }
+  })
+  
+  output$ui_pick_two_levels <- renderUI({
+    req(input$test_type == "Two-sample t-test", input$group_var)
+    d <- df_tests()
+    levs <- levels(factor(d[[input$group_var]]))
+    if (length(levs) < 2) return(helpText("This grouping variable has < 2 levels in data."))
+    tagList(
+      selectInput("level_a", "Choose level A", choices = levs, selected = levs[1]),
+      selectInput("level_b", "Choose level B", choices = levs, selected = levs[min(2, length(levs))])
+    )
+  })
+  
+  output$ui_alt_hypothesis <- renderUI({
+    if (input$test_type != "Two-sample t-test") return(NULL)
+    selectInput("alt", "Alternative hypothesis",
+                choices = c("Two-sided" = "two.sided",
+                            "Greater (A > B)" = "greater",
+                            "Less (A < B)" = "less"),
+                selected = "two.sided")
+  })
+  
+  output$ui_ref_group <- renderUI({
+    if (input$test_type != "Two-sample t-test") return(NULL)
+    req(input$group_var)
+    d <- df_tests()
+    g <- input$group_var
+    levs <- sort(unique(d[[g]]))
+    if (length(levs) >= 2) {
+      tagList(
+        helpText("Pick which level is Group A and which is Group B (affects 'greater/less')."),
+        selectInput("level_a", "Group A (first level)", choices = levs),
+        selectInput("level_b", "Group B (second level)", choices = levs, selected = levs[min(2,length(levs))])
+      )
+    }
+  })
+  
+  output$assumption_hint <- renderUI({
+    req(input$test_type)
+    if (input$test_type == "Two-sample t-test") {
+      HTML("<em>Requirements:</em> one numeric + one categorical (choose exactly two levels). We pick Welch or Student t automatically; you can choose one/two-sided.")
+    } else if (input$test_type == "Chi-square: Independence") {
+      HTML("<em>Requirements:</em> two categorical variables. We pick Pearson / Fisher / Monte Carlo automatically based on expected counts.")
+    } else {
+      HTML("<em>Requirements:</em> one categorical variable compared to a uniform (or supplied) distribution.")
+    }
+  })
+  
 }
 
 shinyApp(ui, server)
