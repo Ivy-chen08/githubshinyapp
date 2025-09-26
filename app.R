@@ -159,8 +159,56 @@ ui <- navbarPage(
       )
     )
   ),
-  
-  
+  # --- Statistical Tests ---
+  tabPanel(
+    "Statistical Tests",
+    sidebarLayout(
+      sidebarPanel(
+        fileInput("file_tests", "Upload .xlsx / .csv (optional)", accept = c(".xlsx",".csv")),
+        checkboxInput("use_demo_tests", "Use bundled cleaned_survey.xlsx", value = TRUE),
+        hr(),
+        selectInput(
+          "test_type", "Choose a test:",
+          choices = c("Two-sample t-test", "Chi-square: Goodness of Fit", "Chi-square: Independence")
+        ),
+        numericInput("alpha", "Significance level (α)", value = 0.05, min = 0.001, max = 0.2, step = 0.01),
+        hr(),
+        
+        # dynamic var
+        uiOutput("test_var_inputs"),
+        uiOutput("ui_pick_two_levels"),
+        uiOutput("ui_ref_group"),
+        uiOutput("ui_alt_hypothesis"),
+        
+        # ---- Plot style for tests (only for t-test) ----
+        conditionalPanel(
+          condition = "input.test_type == 'Two-sample t-test'",
+          selectInput(
+            "tt_plot_style", "Plot style (two-sample):",
+            choices = c("Violin + box" = "violin",
+                        "Boxplot + jitter" = "box_jitter",
+                        "Mean ± 95% CI" = "mean_ci",
+                        "Overlapped density" = "density"),
+            selected = "violin"
+          ),
+          checkboxInput("tt_show_points", "Show raw points (where applicable)", value = FALSE)
+        ),
+        
+        
+        hr(),
+        uiOutput("assumption_hint")
+      ),
+      mainPanel(
+        h4("Hypotheses"),
+        verbatimTextOutput("hypothesis"),
+        h4("Assumptions"),
+        verbatimTextOutput("assumptions"),
+        h4("Test Result"),
+        verbatimTextOutput("test_result"),
+        h4("Visualisation")
+      )
+    )
+  )
 )
 
 server <- function(input, output, session) {
